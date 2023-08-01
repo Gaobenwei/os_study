@@ -1,0 +1,27 @@
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+
+int main(int argc,char *argv[])
+{
+    int p1[2],p2[2];
+    //p1写端父进程，读端子进程，p2相反
+    pipe(p1);
+    pipe(p2);
+    char ch='x';
+    if(fork()==0)
+    {
+        read(p1[0],&ch,1);
+        printf("%d: received ping\n",getpid());
+        write(p2[1],&ch,1);
+        exit(0);
+    }
+    else
+    {
+       write(p1[1],&ch,1); 
+       wait(0);
+       read(p2[0],&ch,1);
+       printf("%d: received pong\n",getpid());
+       exit(0); 
+    }
+}
