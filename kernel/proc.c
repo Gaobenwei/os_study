@@ -294,6 +294,7 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+  np->mask=p->mask;
 
   release(&np->lock);
 
@@ -692,4 +693,19 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+//要收集进程数，请在 kernel/proc.c 中添加一个函数
+
+uint64 proc_count()
+{
+  uint64 count=0;
+  for(struct proc* first=proc;first<&proc[NPROC];++first)
+  {
+    if(first->state!=UNUSED)
+    {
+      count++;
+    }
+  }
+  return count;
 }

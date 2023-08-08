@@ -80,3 +80,21 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+//要收集可用内存量，可在 kernel/kalloc.c 中添加一个函数
+uint64 memory_use_num()
+{
+  struct run* r;
+  acquire(&kmem.lock);
+  // 统计空闲页数，乘上页大小 PGSIZE 就是空闲的内存字节数
+  r=kmem.freelist;
+  uint64 count=0;
+  while(r)
+  {
+    count+=PGSIZE;
+    r=r->next;
+  }
+
+  release(&kmem.lock);
+  return count;
+}
