@@ -108,6 +108,8 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+void            ukvmmap(pagetable_t kpagetable,uint64 va, uint64 pa, uint64 sz, int perm);
+pagetable_t     ukvminit();
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -178,6 +180,9 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void            vmprint(pagetable_t);
+void            vmprint_level(pagetable_t pagetable,uint64 level);
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
 
 // plic.c
 void            plicinit(void);
@@ -223,3 +228,12 @@ int             sockread(struct sock *, uint64, int);
 int             sockwrite(struct sock *, uint64, int);
 void            sockrecvudp(struct mbuf*, uint32, uint16, uint16);
 #endif
+
+
+int
+copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+
+int
+copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
+
+int uvmcopy_not_physical(pagetable_t old,pagetable_t new,uint64 begin,uint64 end);

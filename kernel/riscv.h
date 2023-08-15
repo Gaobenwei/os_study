@@ -320,28 +320,32 @@ sfence_vma()
 }
 
 
-#define PGSIZE 4096 // bytes per page
-#define PGSHIFT 12  // bits of offset within a page
+#define PGSIZE 4096 //  每一个page的大小:4096 Bytes
+#define PGSHIFT 12  // page的offset：12个bit
 
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
+//PTE中的若干flag
 #define PTE_V (1L << 0) // valid
-#define PTE_R (1L << 1)
-#define PTE_W (1L << 2)
-#define PTE_X (1L << 3)
+#define PTE_R (1L << 1) // readable
+#define PTE_W (1L << 2) // writable
+#define PTE_X (1L << 3) // executable
 #define PTE_U (1L << 4) // 1 -> user can access
 
 // shift a physical address to the right place for a PTE.
+//物理地址转换为PTE
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
-
+//PTE转换为物理地址
 #define PTE2PA(pte) (((pte) >> 10) << 12)
-
+// 取出PTE中的标志位
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
-
+// 指示每一级页表的页表偏移为9位
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK          0x1FF // 9 bits
+// 根据页表的级数(0, 1, 2)，取对应VPN的偏移
 #define PXSHIFT(level)  (PGSHIFT+(9*(level)))
+//得到相应级数页表的页表偏移
 #define PX(level, va) ((((uint64) (va)) >> PXSHIFT(level)) & PXMASK)
 
 // one beyond the highest possible virtual address.

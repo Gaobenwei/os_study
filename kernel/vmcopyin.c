@@ -26,6 +26,9 @@ statscopyin(char *buf, int sz) {
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
+//从用户复制到内核。
+//从给定页表的虚拟地址srcva拷贝len字节到dst。
+//成功返回0，失败返回-1。
 int
 copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
@@ -42,6 +45,9 @@ copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 // Copy bytes to dst from virtual address srcva in a given page table,
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
+//从用户复制一个以空结尾的字符串到内核。
+//从给定页表中的虚拟地址srcva拷贝字节到dst，直到'\0'，或max。
+//成功返回0，失败返回-1。
 int
 copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {

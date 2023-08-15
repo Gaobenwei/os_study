@@ -31,15 +31,21 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
 
+      // 老版本完成的是为所有进程页表在全局内核页表上分配内核栈
+	    // 内核栈初始化过程开始
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
+
+      //内核栈初始化过程结束
+      //这一段后面要删除，换成我们的版本并在allocproc中调用
   }
   kvminithart();
 }
@@ -121,18 +127,60 @@ found:
     return 0;
   }
 
+  //进程内核页表函数调用
+  p->k_pagetable=ukvminit();
+  if(p->k_pagetable==0)
+  {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  char *pa=kalloc();
+  if(pa==0)
+  {
+    panic("kalloc");
+  }
+  uint64 va=KSTACK((int) (p - proc));
+  ukvmmap(p->k_pagetable,va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack=va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+
   return p;
 }
+
+//一个针对释放进程内核页表的版本proc_freekernelpagetable
+void proc_free_kernel_pagetable(pagetable_t pagetable)
+{
+  //遍历
+  for(int i=0;i<512;++i)
+  {
+    pte_t pte=pagetable[i];
+    if((pte & PTE_V))
+    {
+      pagetable[i]=0;
+      if((pte&(PTE_R | PTE_W | PTE_X))==0)
+      {
+        uint64 child=PTE2PA(pte);
+        proc_free_kernel_pagetable((pagetable_t)child);
+      }
+    }
+
+  }
+  kfree((void*)pagetable);
+}
+
 
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+//释放进程结构和挂起的数据，包括用户页面。必须持有P ->锁。
 static void
 freeproc(struct proc *p)
 {
@@ -142,6 +190,26 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+
+  // 删除内核栈
+  if(p->kstack)
+  {
+    //根据栈虚拟地址找到物理地址
+    pte_t* ppt=walk(p->k_pagetable,p->kstack,0);
+    if(ppt==0)
+    {
+      panic("freeproc : kstack");
+    }
+    //删除对应的物理地址
+    kfree((void*)(PTE2PA(*ppt)));
+  }
+  p->kstack=0;
+
+  //删除kernel pagetable
+  if(p->k_pagetable)
+    proc_free_kernel_pagetable(p->k_pagetable);
+  p->k_pagetable=0;
+
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -187,6 +255,7 @@ proc_pagetable(struct proc *p)
 
 // Free a process's page table, and free the
 // physical memory it refers to.
+//释放一个进程的页表，并释放它所引用的物理内存。
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
@@ -221,6 +290,8 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  uvmcopy_not_physical(p->pagetable,p->k_pagetable,0,p->sz);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -235,6 +306,8 @@ userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+//增加或减少n字节的用户内存。
+//成功返回0，失败返回-1。
 int
 growproc(int n)
 {
@@ -243,11 +316,21 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    if(PGROUNDDOWN(sz+n)>=PLIC)
+      return -1;
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    uvmcopy_not_physical(p->pagetable,p->k_pagetable,p->sz,sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    //内核页表的映射同步缩小
+    int new_size=p->sz+n;
+    if(PGROUNDDOWN(new_size)<PGROUNDUP(p->sz))
+    {
+      int npages=(PGROUNDUP(p->sz)-PGROUNDUP(new_size))/PGSIZE;
+      uvmunmap(p->k_pagetable,PGROUNDUP(new_size),npages,0);
+    }
   }
   p->sz = sz;
   return 0;
@@ -255,6 +338,8 @@ growproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
+//创建一个新进程，复制父进程。
+//设置子内核堆栈返回，就像从fork()系统调用一样。
 int
 fork(void)
 {
@@ -268,22 +353,26 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
+  //将用户内存从父级复制到子级。
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
   }
+  uvmcopy_not_physical(np->pagetable,np->k_pagetable,0,p->sz);
   np->sz = p->sz;
 
   np->parent = p;
 
   // copy saved user registers.
+  //复制保存的用户注册表。
   *(np->trapframe) = *(p->trapframe);
 
-  // Cause fork to return 0 in the child.
+  // Cause fork to return 0 in the child.//导致fork在子进程中返回0。
   np->trapframe->a0 = 0;
 
   // increment reference counts on open file descriptors.
+  //增加打开文件描述符的引用计数。
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
@@ -453,6 +542,8 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+// 完成的是进程的调度。
+
 void
 scheduler(void)
 {
@@ -462,6 +553,7 @@ scheduler(void)
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
+    //通过确保设备可以中断来避免死锁。
     intr_on();
     
     int found = 0;
@@ -471,12 +563,21 @@ scheduler(void)
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+        //切换到选定的进程。进程的工作是释放它的锁，然后在返回给我们之前重新获取它。
         p->state = RUNNING;
         c->proc = p;
+        //在切换任务前，将用户内核页表替换到stap寄存器中
+        w_satp(MAKE_SATP(p->k_pagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        //进程现在已经完成运行。
+        //它应该在回来之前改变它的p->状态
+
+        //该进程执行结束后，将SATP寄存器的值设置为全局内核页表地址
+        kvminithart(); 
         c->proc = 0;
 
         found = 1;

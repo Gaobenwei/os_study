@@ -51,6 +51,8 @@ exec(char *path, char **argv)
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
+    if(sz1>=PLIC)
+      goto bad;
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -109,12 +111,22 @@ exec(char *path, char **argv)
   safestrcpy(p->name, last, sizeof(p->name));
     
   // Commit to the user image.
+  //提交到用户镜像。
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
+
+  //取消进程内核页表之前的映射，在进程内核页表，建立新进程页表的映射
+  uvmunmap(p->k_pagetable,0,PGROUNDDOWN(p->sz)/PGSIZE,0);
+  uvmcopy_not_physical(pagetable,p->k_pagetable,0,sz);
+
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+  if(p->pid==1)
+  {
+    vmprint(p->pagetable);
+  }
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
