@@ -103,4 +103,14 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  //警报间隔
+  int ticks_;
+  //指向处理函数的指针(系统调用时的函数指针数组的索引)
+  uint64 handler;
+  //上次调用进程的警报处理程序以来已经过去了多少tick
+  uint64 ticks; 
+  //指向trapframe副本的指针
+  struct trapframe *trapframecopy;
+  //是否处于handler中，防止重复调用
+  int is_in_handler;
 };

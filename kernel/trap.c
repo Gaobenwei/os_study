@@ -77,8 +77,32 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
+  //如果这是一个定时器中断，放弃CPU。
   if(which_dev == 2)
+  {
+    if( p->ticks_!=0 )
+    {
+      if(p->ticks==p->ticks_) //到达设定的间隔
+      {
+        if(p->is_in_handler)
+        {
+          p->is_in_handler=0; //设置标记
+          p->ticks=0; 
+          //使用trapframe副本的方法
+          p->trapframecopy=p->trapframe+512;
+          memmove(p->trapframecopy,p->trapframe,sizeof(struct trapframe));
+
+          p->trapframe->epc=p->handler;
+          /*这样在返回到用户空间时，程序计数器为handler定时函数的地址，
+          便达到了执行定时函数的目的。
+          (这里做的其实就是在内核态进行赋值，返回到用户态再执行。)*/
+        }
+      }
+      p->ticks++;
+    }
     yield();
+  }
+    
 
   usertrapret();
 }
@@ -170,7 +194,7 @@ clockintr()
 
 // check if it's an external interrupt or software interrupt,
 // and handle it.
-// returns 2 if timer interrupt,
+// returns 2 if timer interrupt,如果定时器中断，返回2;
 // 1 if other device,
 // 0 if not recognized.
 int

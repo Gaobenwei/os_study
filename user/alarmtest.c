@@ -6,6 +6,14 @@
 // versions of these tests.
 //
 
+//测试内核是否只调用一次告警处理程序。
+//
+//测试内核多次调用处理程序。
+//
+//测试当处理程序返回时，它返回到程序中计时器中断发生的点，所有寄存器保持与中断发生时相同的值。
+
+//测试内核不允许可重入的告警调用。
+
 #include "kernel/param.h"
 #include "kernel/types.h"
 #include "kernel/stat.h"
