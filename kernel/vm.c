@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -68,6 +70,8 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+//返回页表pagetable中对应虚拟地址va的PTE地址。
+//if alloc!=0，创建所需的页表页。
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -91,6 +95,11 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
+//查找虚拟地址，返回物理地址，如果没有映射则返回0。
+//只能用来查找用户页面。
+/*该函数实现的功能是：PTE无效、不存在、无PTE_U标志位时，
+都会返回0表示失败。现在我们需要添加Lazy allocation功能，
+所以PTE无效、不存在时需要分配、映射内存。*/
 uint64
 walkaddr(pagetable_t pagetable, uint64 va)
 {
@@ -99,12 +108,40 @@ walkaddr(pagetable_t pagetable, uint64 va)
 
   if(va >= MAXVA)
     return 0;
-
+  struct proc *p=myproc();
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
+  // if(pte == 0)
+  //   return 0;
+  // if((*pte & PTE_V) == 0)
+  //   return 0;
+  if(pte==0||(*pte & PTE_V)==0)
+  {
+    if(va<p->sz && va>PGROUNDDOWN(p->trapframe->sp))
+    {
+      char* mem;
+      if((mem=kalloc())==0)
+      {
+        p->killed=1;
+        return 0;
+      }
+      else
+      {
+        memset(mem,0,PGSIZE);
+        va=PGROUNDDOWN(va);
+        if(mappages(p->pagetable,va,PGSIZE,(uint64)mem,PTE_W|PTE_R|PTE_U)!=0)
+        {
+          //映射失败
+          kfree(mem);
+          p->killed=1;
+          return 0;
+        }
+      }
+    }
+    else
+    {
+      return 0;
+    }
+  }
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
@@ -145,6 +182,9 @@ kvmpa(uint64 va)
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
 // allocate a needed page-table page.
+//为从va开始的虚拟地址创建pte，这些 PTE 指向以 pa 开始的物理地址。
+//Va和size可能没有对齐页面。成功时返回0，
+//如果walk()无法分配所需的页表页则返回-1。
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
@@ -170,6 +210,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+//删除从va开始的n页映射，va必须对齐。映射必须存在。可选择释放物理内存。
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -181,9 +222,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      // panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      // panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -225,6 +268,8 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
+//分配pte和物理内存来将进程从oldsz扩展到newsz，
+//它们不需要对齐页。返回新大小，错误时返回0。
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -255,6 +300,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 // need to be less than oldsz.  oldsz can be larger than the actual
 // process size.  Returns the new process size.
+//释放用户页面，使进程大小从oldsz变为newsz。
+//Oldsz和newsz不需要对齐页面，newsz也不需要小于Oldsz。
+//Oldsz可以大于实际进程大小。返回新的进程大小。
 uint64
 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -305,6 +353,9 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+//给定父进程的页表，将其内存复制到子进程的页表中。
+//复制页表和物理内存。成功时返回0，失败时返回-1。
+//在失败时释放所有已分配的页面。s
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -315,9 +366,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      // panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      // panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -351,6 +404,9 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+//从内核拷贝到用户。
+//从src拷贝len字节到指定页表的虚拟地址dstva。
+//成功返回0，失败返回-1。
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {

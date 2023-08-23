@@ -67,7 +67,39 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  }
+  else if(r_scause()==15 || r_scause()==13)//课程讲解添加,13 or 15代表page fault
+  {
+    uint64 va=r_stval();//引发page fault 的虚拟地址，需要分配物理内存并映射
+    if(va<p->sz && va>PGROUNDDOWN(p->trapframe->sp))
+    {
+      //发生page fault 的位置在p->sz(已经经过sbrk扩展)之下，在栈上面，注意栈是向下延伸
+      va=PGROUNDDOWN(va);
+      char *mem;
+      mem=kalloc();
+      if(mem==0)
+      {
+        p->killed=-1;//分配物理内存失败，则杀死进程，且打印相关信息
+        printf("usertrap(): kalloc() failed\n");
+      }
+      else
+      {
+        memset(mem,0,PGSIZE);
+        if(mappages(p->pagetable,va,PGSIZE,(uint64)mem,PTE_W|PTE_R|PTE_U)!=0)
+        {
+          //映射失败，杀死进程，打印消息
+          kfree(mem);
+          printf("usertrap():mappages() failed\n");
+          p->killed=1;
+        }
+      }
+    }
+    else 
+    {
+      p->killed=-1;//读入的虚拟地址比p->sz大，比用户栈小
+    }
+  } 
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
@@ -173,6 +205,8 @@ clockintr()
 // returns 2 if timer interrupt,
 // 1 if other device,
 // 0 if not recognized.
+//检查是外部中断还是软件中断，并处理它。
+//如果定时器中断返回2，如果其他设备返回1，如果未识别返回0。
 int
 devintr()
 {

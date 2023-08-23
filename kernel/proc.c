@@ -89,6 +89,9 @@ allocpid() {
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+//在进程表中查找未使用的进程。
+//如果找到，初始化在内核中运行所需的状态，并持有p->锁返回。
+//如果没有空闲进程，或者内存分配失败，则返回0。
 static struct proc*
 allocproc(void)
 {
@@ -235,6 +238,8 @@ userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+//增加或减少n字节的用户内存。
+//成功返回0，失败返回-1。
 int
 growproc(int n)
 {
@@ -255,6 +260,8 @@ growproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
+//创建一个新进程，复制父进程。
+//设置子内核堆栈返回，就像从fork()系统调用一样。
 int
 fork(void)
 {
@@ -267,7 +274,7 @@ fork(void)
     return -1;
   }
 
-  // Copy user memory from parent to child.
+  // Copy user memory from parent to child.在此处需要实现lazy allocation
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
