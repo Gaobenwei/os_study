@@ -15,13 +15,13 @@
 // address of one of the registers.
 #define Reg(reg) ((volatile unsigned char *)(UART0 + reg))
 
-// the UART control registers.
+// the UART control registers.// UART控制寄存器。
 // some have different meanings for
 // read vs write.
 // see http://byterunner.com/16550.html
-#define RHR 0                 // receive holding register (for input bytes)
-#define THR 0                 // transmit holding register (for output bytes)
-#define IER 1                 // interrupt enable register
+#define RHR 0                 // receive holding register (for input bytes)//接收保存寄存器(用于输入字节)
+#define THR 0                 // transmit holding register (for output bytes)//发送保存寄存器(用于输出字节)
+#define IER 1                 // interrupt enable register//中断启用寄存器
 #define IER_TX_ENABLE (1<<0)
 #define IER_RX_ENABLE (1<<1)
 #define FCR 2                 // FIFO control register
@@ -176,6 +176,7 @@ uartgetc(void)
 // handle a uart interrupt, raised because input has
 // arrived, or the uart is ready for more output, or
 // both. called from trap.c.
+//处理一个uart中断，因为输入已经到达，或者uart准备好更多的输出，或者两者兼而有之。从trap.c调用。
 void
 uartintr(void)
 {

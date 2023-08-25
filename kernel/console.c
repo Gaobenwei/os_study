@@ -133,7 +133,8 @@ consoleread(int user_dst, uint64 dst, int n)
 // uartintr() calls this for input character.
 // do erase/kill processing, append to cons.buf,
 // wake up consoleread() if a whole line has arrived.
-//
+//控制台输入中断处理程序。Uartintr()为输入字符调用此方法。
+// 执行erase/kill处理，附加到cons.buf，如果整行已经到达，则唤醒consoleread()。
 void
 consoleintr(int c)
 {
@@ -189,6 +190,7 @@ consoleinit(void)
 
   // connect read and write system calls
   // to consoleread and consolewrite.
+  //将读写系统调用连接到consoleread和consolewrite。
   devsw[CONSOLE].read = consoleread;
   devsw[CONSOLE].write = consolewrite;
 }

@@ -32,7 +32,7 @@ trapinithart(void)
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
-//
+//处理来自用户空间的中断、异常或系统调用。
 void
 usertrap(void)
 {
@@ -67,7 +67,40 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  }
+  else if(r_scause()==15)
+  {
+    uint64 va=r_stval();
+    pte_t *pte=walk(p->pagetable,va,0);
+    //页面缺失导致进入，需要判断页表项PTE_RSW
+    if(!(PTE_FLAGS(*pte)&PTE_RSW)) //并非是COW页的缺失
+    {
+      p->killed=1;
+    }
+    else
+    {
+      va=PGROUNDDOWN(va);  //虚拟地址向下取整
+      uint64 pa=(uint64)kalloc(); //分配内存页（空）
+      if(pa==0)
+      {
+        p->killed=1;
+      }
+      else
+      {
+        uint64 flags=PTE_FLAGS(*pte);
+        flags=(flags & ~PTE_RSW )| PTE_W;
+        uint64 pa_fa=walkaddr(p->pagetable,va);
+        memmove((void*)pa,(void*)pa_fa,PGSIZE);
+        uvmunmap(p->pagetable,va,1,1);
+        mappages(p->pagetable,va,PGSIZE,pa,flags);
+        //标记为非COW页面
+         //物理地址
+         //内存复制
+         //进行映射，权限设置为可写
+      }
+    }
+  } 
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
@@ -173,6 +206,8 @@ clockintr()
 // returns 2 if timer interrupt,
 // 1 if other device,
 // 0 if not recognized.
+//检查是外部中断还是软件中断，并处理它。
+//如果定时器中断返回2，如果其他设备返回1，如果未识别返回0。
 int
 devintr()
 {

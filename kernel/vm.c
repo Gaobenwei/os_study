@@ -68,6 +68,8 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+//返回页表pagetable中对应虚拟地址va的PTE地址。
+//如果alloc!=0，创建所需的页表页。
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -91,6 +93,8 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
+// 查找虚拟地址，返回物理地址，如果没有映射则返回0。
+// 只能用于查找用户页面。
 uint64
 walkaddr(pagetable_t pagetable, uint64 va)
 {
@@ -145,6 +149,9 @@ kvmpa(uint64 va)
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
 // allocate a needed page-table page.
+//为从va开始的虚拟地址创建pte，该虚拟地址引用从pa开始的物理地址。
+//Va和size可能没有对齐页面。成功时返回0，
+//如果walk()无法分配所需的页表页则返回-1。
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
@@ -170,6 +177,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+// 删除从va开始的n页映射，va必须对齐。映射必须存在。
+// 可选择释放物理内存。
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -305,13 +314,17 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+//给定父进程的页表，将其内存复制到子进程的页表中。
+//复制页表和物理内存。
+//成功返回0，失败返回-1。
+//在失败时释放所有已分配的页面。
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -319,14 +332,26 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    //跟新标志位
+    // 将父进程的物理页直接 map 到子进程 （懒复制）
+    // 权限设置和父进程一致
+    // （不可写+PTE_COW，或者如果父进程页本身单纯只读非 COW，则子进程页同样只读且无 COW 标识）
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    if(flags & PTE_W)
+    {
+      flags=(flags|PTE_RSW)& (~PTE_W);
+      *pte = PA2PTE(pa) | flags;
+    }
+    
+
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      // kfree(mem);
       goto err;
     }
+    inref(pa);
   }
   return 0;
 
@@ -351,13 +376,50 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+//从内核拷贝到用户。
+//从src拷贝len字节到指定页表的虚拟地址dstva。
+//成功返回0，失败返回-1。
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
+  if(dstva > MAXVA - len) return -1; //添加
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    //cow,此虚拟地址的映射的物理地址未必分配完毕，即PTE不可写
+    pte_t *pte=walk(pagetable,va0,0);
+    if(pte==0)
+    {
+      return -1;
+    }
+    //查看标志位
+    if(!(PTE_FLAGS(*pte)&PTE_W))
+    {
+      if(!(PTE_FLAGS(*pte)&PTE_RSW)) //不可写，但是不是COW
+      {
+        return -1;
+      }
+      uint64 va=va0;
+      uint64 pa=(uint64)kalloc();
+      if(pa==0)
+      {
+        return -1;
+      }
+      else
+      {
+        uint64 flags=PTE_FLAGS(*pte);
+        flags=(flags & ~PTE_RSW)| PTE_W;
+        uint64 pa_fa=walkaddr(pagetable,va);
+        memmove((void*)pa,(void*)pa_fa,PGSIZE); //复制物理地址内容
+        uvmunmap(pagetable,va,1,1); //取消原来映射
+        mappages(pagetable,va,PGSIZE,pa,flags);
+        
+      }
+
+    }
+
+
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

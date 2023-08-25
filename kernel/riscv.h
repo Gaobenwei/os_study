@@ -331,6 +331,9 @@ sfence_vma()
 #define PTE_W (1L << 2)
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // 1 -> user can access
+//查看RISC V的PTE标志位，可以看到RSW在第9、10位，我们这里使用第9位。
+//标志是否COW页
+#define PTE_RSW (1L << 8)
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
