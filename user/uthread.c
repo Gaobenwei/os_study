@@ -1,8 +1,13 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "user/user.h"
+#include "kernel/riscv.h"
+#include "kernel/spinlock.h"
+#include "kernel/param.h"
+#include "kernel/proc.h"
 
 /* Possible states of a thread: */
+/*线程的可能状态:*/
 #define FREE        0x0
 #define RUNNING     0x1
 #define RUNNABLE    0x2
@@ -14,11 +19,12 @@
 struct thread {
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
+  struct context cxt;
 
 };
 struct thread all_thread[MAX_THREAD];
-struct thread *current_thread;
-extern void thread_switch(uint64, uint64);
+struct thread *current_thread;  //当前的线程
+extern void thread_switch(struct context* old, struct context* new);
               
 void 
 thread_init(void)
@@ -28,6 +34,10 @@ thread_init(void)
   // save thread 0's state.  thread_schedule() won't run the main thread ever
   // again, because its state is set to RUNNING, and thread_schedule() selects
   // a RUNNABLE thread.
+  // main()是线程0，它将第一次调用thread_schedule()。
+  // 它需要一个堆栈，以便第一个thread_switch()可以保存线程0的状态。
+  // thread_schedule()不会再运行主线程了，因为它的状态被设置为RUNNING，
+  // 而thread_schedule()选择了一个RUNNABLE线程。
   current_thread = &all_thread[0];
   current_thread->state = RUNNING;
 }
@@ -63,6 +73,7 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+    thread_switch(&t->cxt,&next_thread->cxt);
   } else
     next_thread = 0;
 }
@@ -77,6 +88,13 @@ thread_create(void (*func)())
   }
   t->state = RUNNABLE;
   // YOUR CODE HERE
+  //修改 ra 和 sp 寄存器 确保首次创建进程的函数已经栈
+  // thread_switch 的结尾会返回到 ra，从而运行线程代码
+  // 将线程的栈指针指向其独立的栈，注意到栈的生长是从高地址到低地址，所以
+  // 要将 sp 设置为指向 stack 的最高地址
+  t->cxt.ra=(uint64)func;
+  t->cxt.sp=(uint64)t->stack+(STACK_SIZE-1);
+
 }
 
 void 
