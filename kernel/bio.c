@@ -89,6 +89,7 @@ bget(uint dev, uint blockno)
 }
 
 // Return a locked buf with the contents of the indicated block.
+// 返回一个锁定的 buf，其中包含指定区块的内容。
 struct buf*
 bread(uint dev, uint blockno)
 {
@@ -113,6 +114,8 @@ bwrite(struct buf *b)
 
 // Release a locked buffer.
 // Move to the head of the most-recently-used list.
+//释放锁定的缓冲区。
+//移动到最近使用列表的头部。
 void
 brelse(struct buf *b)
 {

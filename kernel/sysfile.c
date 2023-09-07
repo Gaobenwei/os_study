@@ -290,6 +290,7 @@ sys_open(void)
   int fd, omode;
   struct file *f;
   struct inode *ip;
+  struct inode *dp;
   int n;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
@@ -297,13 +298,16 @@ sys_open(void)
 
   begin_op();
 
-  if(omode & O_CREATE){
+  if(omode & O_CREATE)
+  {
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
       end_op();
       return -1;
     }
-  } else {
+  } 
+  else 
+  {
     if((ip = namei(path)) == 0){
       end_op();
       return -1;
@@ -316,13 +320,47 @@ sys_open(void)
     }
   }
 
-  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+  if(!(omode & O_NOFOLLOW))
+  {
+    int i=0;//链接深度达到阈值（比如10）返回错误码。
+    for(;i<10 && ip->type==T_SYMLINK;++i)
+    {
+      if(readi(ip,0,(uint64)path,0,MAXPATH)==0)
+      {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      //读取软链接iNode中的内容成功之后
+      if((dp=namei(path))==0) //查找返回路径（就是软链接读到的路径名称）的inode不成功
+      {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlockput(ip);
+      ip=dp;
+      ilock(ip);
+    }
+    if(i==10)
+    {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+  }
+
+
+
+  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV))
+  {
     iunlockput(ip);
     end_op();
     return -1;
   }
 
-  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0)
+  {
     if(f)
       fileclose(f);
     iunlockput(ip);
@@ -330,10 +368,13 @@ sys_open(void)
     return -1;
   }
 
-  if(ip->type == T_DEVICE){
+  if(ip->type == T_DEVICE)
+  {
     f->type = FD_DEVICE;
     f->major = ip->major;
-  } else {
+  } 
+  else 
+  {
     f->type = FD_INODE;
     f->off = 0;
   }
@@ -341,7 +382,8 @@ sys_open(void)
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
 
-  if((omode & O_TRUNC) && ip->type == T_FILE){
+  if((omode & O_TRUNC) && ip->type == T_FILE)
+  {
     itrunc(ip);
   }
 
@@ -482,5 +524,55 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+//symlink(target, path)system call，在path（指向target）创建一个新符号链接。
+// 注意，对于system call成功，target无需存在。
+// 你将需要选择某处来存储符号链接的target path，例如，在inode的data blocks中。
+// symlink应该返回一个整数，0代表成功，-1代表失败，与link和unlink相似。
+uint64 sys_symlink(void)
+{
+  char target[MAXPATH];
+  char path[MAXPATH];
+  struct inode* ip;
+  struct inode* dp;
+  int r;
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1,path,MAXPATH) < 0)
+  {
+    return -1;
+  }
+
+  begin_op();
+  //如果软链接已经存在
+  if((ip=namei(path))!=0)
+  {
+    end_op();
+    return -1;
+  }
+  if((dp=namei(target))!=0)
+  {
+    if(dp->type==T_DIR) //target为目录
+    {
+      end_op();
+      return -1;
+    }
+  }
+
+  //为这个软链接allocate一个新的inode
+  if((ip=create(path,T_SYMLINK,0,0))==0)
+  {
+    end_op();
+    return -1;
+  }
+  
+  // 把target path写入这个软链接inode的数据[0, MAXPATH]位置内
+  if((r=writei(ip,0,(uint64)target,0,strlen(target)))<0)
+  {
+    end_op();
+    return -1;
+  }
+  iunlockput(ip);
+  end_op();
   return 0;
 }

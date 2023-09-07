@@ -61,6 +61,7 @@ bzero(int dev, int bno)
 // Blocks.
 
 // Allocate a zeroed disk block.
+// 分配一个置零的磁盘块。
 static uint
 balloc(uint dev)
 {
@@ -285,6 +286,8 @@ idup(struct inode *ip)
 
 // Lock the given inode.
 // Reads the inode from disk if necessary.
+//锁定指定的索引节点。
+//如果需要，从磁盘读取inode。
 void
 ilock(struct inode *ip)
 {
@@ -358,6 +361,7 @@ iput(struct inode *ip)
 }
 
 // Common idiom: unlock, then put.
+//常用的用法:先解锁，再放。
 void
 iunlockput(struct inode *ip)
 {
@@ -374,6 +378,14 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
+// Inode内容
+//
+// 与每个inode相关联的内容(数据)以块的形式存储在磁盘上。
+// 第一个NDIRECT块编号列在ip->addr[]中。
+// 下一个NINDIRECT块列在块ip-> address [NDIRECT]中。
+
+// 返回inode ip中第n块的磁盘块地址。
+// 如果没有这样的块，bmap分配一个。
 static uint
 bmap(struct inode *ip, uint bn)
 {
@@ -389,6 +401,7 @@ bmap(struct inode *ip, uint bn)
 
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
+    // 加载间接块，必要时进行分配。
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
@@ -400,12 +413,41 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn-=NINDIRECT;
+
+  if(bn<NDINDIRECT)
+  {
+    if((addr=ip->addrs[NDIRECT+1])==0)
+    {
+      ip->addrs[NDIRECT+1]=addr=balloc(ip->dev);
+    }
+    bp=bread(ip->dev,addr);
+    a=(uint*)bp->data;
+    if((addr=a[bn/NINDIRECT])==0)
+    {
+      a[bn/NINDIRECT]=addr=balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    bp=bread(ip->dev,addr);
+    a=(uint*)bp->data;
+    bn%=NINDIRECT;
+    if((addr=a[bn])==0)
+    {
+      a[bn]=addr=balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
 
 // Truncate inode (discard contents).
 // Caller must hold ip->lock.
+//截断索引节点(丢弃内容)。
+//调用方必须持有ip->锁。
 void
 itrunc(struct inode *ip)
 {
@@ -432,6 +474,33 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  if(ip->addrs[NDIRECT+1])
+  {
+    bp=bread(ip->dev,ip->addrs[NDIRECT+1]);
+    a=(uint*)bp->data;
+    for(j=0;j<NINDIRECT;j++)
+    {
+      if(a[j])
+      {
+        struct buf* bpp=bread(ip->dev,a[j]);
+        uint *aa=(uint*)bpp->data;
+        for(int k=0;k<NINDIRECT;++k)
+        {
+          if(aa[k])
+          {
+            bfree(ip->dev,aa[k]);
+          }
+        }
+        brelse(bpp);
+        bfree(ip->dev,a[j]);
+        a[j]=0;
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev,ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1]=0;
+  }
+
   ip->size = 0;
   iupdate(ip);
 }
@@ -452,6 +521,9 @@ stati(struct inode *ip, struct stat *st)
 // Caller must hold ip->lock.
 // If user_dst==1, then dst is a user virtual address;
 // otherwise, dst is a kernel address.
+//从inode读取数据。
+//调用方必须持有ip->锁。
+//如果user_dst==1，则dst为用户虚拟地址;否则，DST为内核地址。
 int
 readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 {
@@ -483,6 +555,11 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 // Returns the number of bytes successfully written.
 // If the return value is less than the requested n,
 // there was an error of some kind.
+//写入数据到inode。
+//调用方必须持有ip->锁。
+//如果user_src==1，则src为用户虚拟地址;否则，SRC是一个内核地址。
+//返回成功写入的字节数。
+//如果返回值小于请求的n，则存在某种错误。
 int
 writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 {
@@ -511,6 +588,7 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
   // write the i-node back to disk even if the size didn't change
   // because the loop above might have called bmap() and added a new
   // block to ip->addrs[].
+  //将i-node写回磁盘，即使大小没有改变，因为上面的循环可能调用了bmap()并向ip->addrs[]添加了一个新的块。
   iupdate(ip);
 
   return tot;
@@ -625,6 +703,9 @@ skipelem(char *path, char *name)
 // If parent != 0, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
 // Must be called inside a transaction since it calls iput().
+//查找并返回路径名称的inode。
+//如果parent != 0，返回父节点的索引节点，并将最后的path元素复制到name中，该元素必须有容纳DIRSIZ字节的空间。
+//必须在事务内部调用，因为它调用了input()。
 static struct inode*
 namex(char *path, int nameiparent, char *name)
 {

@@ -123,6 +123,7 @@ recover_from_log(void)
 }
 
 // called at the start of each FS system call.
+//每次FS系统调用开始时调用。
 void
 begin_op(void)
 {
@@ -143,6 +144,8 @@ begin_op(void)
 
 // called at the end of each FS system call.
 // commits if this was the last outstanding operation.
+//每次FS系统调用结束时调用。
+//如果这是最后一个未完成的操作，则提交。
 void
 end_op(void)
 {
