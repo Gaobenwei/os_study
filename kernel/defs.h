@@ -139,6 +139,8 @@ int             argaddr(int, uint64 *);
 int             fetchstr(uint64, char*, int);
 int             fetchaddr(uint64, uint64*);
 void            syscall();
+void            *mmap(void* addr,int length, int prot, int flags, int fd, int offset);
+int             munmap(void* addr, int length);
 
 // trap.c
 extern uint     ticks;

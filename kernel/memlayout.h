@@ -1,4 +1,4 @@
-// Physical memory layout
+// Physical memory layout //物理内存布局
 
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:
@@ -65,3 +65,6 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+#define MMAPEND (TRAPFRAME)
+// MMAP 所能使用的最后一个页+1
+

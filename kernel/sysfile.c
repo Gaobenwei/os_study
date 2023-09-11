@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -482,5 +483,214 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+// uint64 sys_mmap(void)
+// {
+//   uint64 failure = (uint64)((char *) -1);
+//   uint64 addr;
+//   int sz,offset,prot,flags,fd;
+//   struct file* f;
+//   //获取系统调用的参数
+//   if(argaddr(0,&addr)<0||argint(1,&sz)<0||argint(2,&prot)<0||argint(3,&flags)<0||argfd(4,&fd,&f)<0||argint(5,&offset)<0)
+//   {
+//     return failure;
+//   }
+//   //判断权限
+//   if(!f->readable && (prot & PROT_READ))
+//   {
+//     return failure;
+//   }
+//   if(!f->writable && (prot & PROT_WRITE) && (flags==MAP_SHARED))
+//   {
+//     return failure;
+//   }
+//   //大小扩展到4096上届
+//   struct proc* p=myproc();
+//   sz=PGROUNDUP(sz);
+//   if(MAXVA-sz<p->sz) //分配后内存不够
+//   {
+//     return failure;
+//   }
+//   for(int i=0;i<NVMA;++i)
+//   {
+//     struct VMA* vm=&p->vmas[i];
+//     if(vm->vaild==0)
+//     {
+//       vm->vaild=1;
+//       vm->vastart=p->sz;
+//       p->sz+=sz;// 虚拟的增加进程大小, 但没有实际分配物理页
+//       vm->sz=sz;
+//       vm->prot=prot;
+//       vm->flags=flags;
+//       vm->fd=fd;
+//       vm->f=f;
+//       filedup(f);
+//       vm->offset=offset;
+//       return vm->vastart;
+//     }
+//   }
+//   return failure;
+// }
+
+uint64
+sys_mmap(void) {
+  uint64 failure = (uint64)((char *) -1);
+  struct proc* p = myproc();
+  uint64 addr;
+  int length, prot, flags, fd, offset;
+  struct file* f;
+
+  // parse argument
+  if (argaddr(0, &addr) < 0 || argint(1, &length) < 0 || argint(2, &prot) < 0
+      || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0 || argint(5, &offset) < 0)
+    return -1;
+
+  // sanity check
+  length = PGROUNDUP(length);
+  if (TRAPFRAME - length < p->sz)
+    return -1;
+  if (!f->readable && (prot & PROT_READ))
+    return failure;
+  if (!f->writable && (prot & PROT_WRITE) && (flags == MAP_SHARED))
+    return failure;
+
+  // find an empty vma slot and fill in
+  for (int i = 0; i < NVMA; i++) {
+    struct vma* vma = &p->vmas[i];
+    if (vma->valid == 0) {
+      vma->valid = 1;
+      vma->addr = p->sz;
+      p->sz += length;
+      vma->length = length;
+      vma->prot = prot;
+      vma->flags = flags;
+      vma->fd = fd;
+      vma->f = f;
+      filedup(f);
+      vma->offset = offset;
+      return vma->addr;
+    }
+  }
+
+  // all vma are in use
+  return failure;
+}
+
+
+// uint64 sys_munmap(void)
+// {
+//   uint64 addr;
+//   int sz;
+//   //首先获取参数
+//   if(argaddr(0,&addr)<0||argint(1,&sz)<0)
+//   {
+//     return -1;
+//   }
+//   struct proc *pc=myproc();
+//   struct VMA* vm=0;
+//   int index=-1;
+//   for(int i=0;i<NVMA;++i)
+//   {
+//     if((pc->vmas[i].vaild==1) &&(addr>=pc->vmas[i].vastart)&& (addr<=pc->vmas[i].vastart+pc->vmas[i].sz))
+//     {
+//       index=i;
+//       vm=&pc->vmas[i];
+//       break;
+//     }
+//   }
+//   if(index==-1)
+//   {
+//     return -1;
+//   }
+//   addr=PGROUNDDOWN(addr);
+//   sz=PGROUNDUP(sz);
+
+//   if(vm->flags & MAP_SHARED)
+//   {
+//     // write back 将区域复写回文件 偷懒了，修改与否都写会
+//     if(filewrite(vm->f,addr,sz)<0)
+//     {
+//       printf("munmap: filewrite < 0\n");
+//     }
+//   }
+//   //取消页映射
+//   uvmunmap(pc->pagetable,addr,sz/PGSIZE,1);
+//   // 更改 vmas
+//   if(addr==vm->vastart&& sz==vm->sz)
+//   {
+//     //完全释放
+//     vm->vaild=0;
+//     fileclose(vm->f);
+//   }
+//   else if(addr==vm->vastart)
+//   {
+//     //释放区域位于头部附近
+//     vm->vastart+=sz;
+//     vm->sz-=sz;
+//     vm->offset+=sz;
+//   }
+//   else if((addr+sz)==(vm->vastart+vm->sz))
+//   {
+//     //释放区域包括尾部
+//     vm->sz-=sz;
+//   }
+//   else 
+//   {
+//     panic("sys_unmap: munmap neither cover beginning or end of mapped region\n");
+//   }
+//   return 0;
+// }
+
+
+uint64
+sys_munmap(void) {
+  uint64 addr;
+  int length;
+  if (argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+    return -1;
+  struct proc *p = myproc();
+  struct vma* vma = 0;
+  int idx = -1;
+  // find the corresponding vma
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vmas[i].valid && addr >= p->vmas[i].addr && addr <= p->vmas[i].addr + p->vmas[i].length) {
+      idx = i;
+      vma = &p->vmas[i];
+      break;
+    }
+  }
+  if (idx == -1)
+    // not in a valid VMA
+    return -1;
+
+  addr = PGROUNDDOWN(addr);
+  length = PGROUNDUP(length);
+  if (vma->flags & MAP_SHARED) {
+    // write back
+    if (filewrite(vma->f, addr, length) < 0) {
+      printf("munmap: filewrite < 0\n");
+    }
+  }
+  uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
+
+  // change the mmap parameter
+  if (addr == vma->addr && length == vma->length) {
+    // fully unmapped
+    fileclose(vma->f);
+    vma->valid = 0;
+  } else if (addr == vma->addr) {
+    // cover the beginning
+    vma->addr += length;
+    vma->length -= length;
+    vma->offset += length;
+  } else if ((addr + length) == (vma->addr + vma->length)) {
+    // cover the end
+    vma->length -= length;
+  } else {
+    panic("munmap neither cover beginning or end of mapped region");
+  }
+
   return 0;
 }

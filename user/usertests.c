@@ -2493,6 +2493,7 @@ sbrkbugs(char *s)
     // free all user memory; there used to be a bug that
     // would not adjust p->sz correctly in this case,
     // causing exit() to panic.
+    // 释放所有用户内存； 曾经有一个 bug，在这种情况下无法正确调整 p->sz，导致 exit() 出错。
     sbrk(-sz);
     // user page fault here.
     exit(0);

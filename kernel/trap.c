@@ -1,10 +1,14 @@
 #include "types.h"
+#include "fcntl.h"
 #include "param.h"
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -50,7 +54,8 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if(r_scause() == 8)
+  {
     // system call
 
     if(p->killed)
@@ -65,13 +70,129 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } 
+
+  // else if(r_scause()==13||r_scause()==15)// 读或写造成的缺页中断
+  // {
+  //   uint64 va=r_stval(); //造成缺页中断的地址
+  //   struct proc *p=myproc();
+  //   if(va>MAXVA||va>p->sz)
+  //   {
+  //     p->killed=1;
+  //   }
+  //   else//查找此时缺页中断与vma是否有关
+  //   {
+  //     int found=0;
+  //     for(int i=0;i<NVMA;++i)
+  //     {
+  //       struct VMA* vm=&p->vmas[i];
+  //       if(vm->vaild==1 && va>=vm->vastart&& va<vm->vastart+vm->sz) //有效且缺页地址也在范围内
+  //       {
+  //         // 找到对应的vma, 分配一个新的4096字节的物理页
+  //         // 并把对应的文件内容读进这个页, 插入进程的虚拟内存映射表
+  //         va=PGROUNDDOWN(va); //按页分配，向下
+  //         uint64 pa=(uint64)kalloc();
+  //         if(pa==0)
+  //         {
+  //           break;
+  //         }
+  //         memset((void*)pa,0,PGSIZE);
+  //         ilock(vm->f->ip);
+  //         if(readi(vm->f->ip,0,pa,vm->offset+va-vm->vastart,PGSIZE)<0)
+  //         {
+  //           iunlock(vm->f->ip);
+  //           break;
+  //         }
+  //         iunlock(vm->f->ip);
+  //         //接下来完成映射
+  //         int perm=PTE_U;
+  //         if(vm->prot & PROT_READ)
+  //         {
+  //           perm |=PTE_R;
+  //         }
+  //         if(vm->prot & PROT_WRITE)
+  //         {
+  //           perm |=PTE_W;
+  //         }
+  //         if(vm->prot & PROT_EXEC)
+  //         {
+  //           perm |=PTE_X;
+  //         }
+  //         if(mappages(p->pagetable,va,PGSIZE,pa,perm)<0)
+  //         {
+  //           kfree((void*)pa);
+  //           break;
+  //         }
+  //         found=1;
+  //         break;
+  //       }
+  //     }
+
+  //     if(!found) //没找到合适的vmas[i]
+  //     {
+  //       p->killed=1;
+  //     }
+  //   }
+  // }
+
+else if(r_scause() == 13 || r_scause() == 15) {
+    uint64 va = r_stval();
+    struct proc* p = myproc();
+    if (va > MAXVA || va > p->sz) {
+      // sanity check
+      p->killed = 1;
+    } else {
+      int found = 0;
+      for (int i = 0; i < NVMA; i++) {
+        struct vma* vma = &p->vmas[i];
+        if (vma->valid && va >= vma->addr && va < vma->addr+vma->length) {
+          // find the matching vma, allocate a physical page
+          // map the file content into the page and insert into p's pagetable
+          va = PGROUNDDOWN(va);
+          uint64 pa = (uint64)kalloc();
+          if (pa == 0) {
+            break;
+          }
+          memset((void *)pa, 0, PGSIZE);
+          begin_op();
+          ilock(vma->f->ip);
+          if(readi(vma->f->ip, 0, pa, vma->offset + va - vma->addr, PGSIZE) < 0) {
+            iunlock(vma->f->ip);
+            end_op();
+            break;
+          }
+          iunlock(vma->f->ip);
+          end_op();
+          int perm = PTE_U;
+          if (vma->prot & PROT_READ)
+            perm |= PTE_R;
+          if (vma->prot & PROT_WRITE)
+            perm |= PTE_W;
+          if (vma->prot & PROT_EXEC)
+            perm |= PTE_X;
+          if (mappages(p->pagetable, va, PGSIZE, pa, perm) < 0) {
+            kfree((void*)pa);
+            break;
+          }
+          found = 1;
+          break;
+        }
+      }
+
+      if (!found)
+        p->killed = 1;
+    }
+
+  }
+  else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
+   
 
   if(p->killed)
     exit(-1);
