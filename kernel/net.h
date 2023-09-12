@@ -1,15 +1,15 @@
 //
 // packet buffer management
-//
+////包缓冲区管理
 
 #define MBUF_SIZE              2048
 #define MBUF_DEFAULT_HEADROOM  128
 
 struct mbuf {
-  struct mbuf  *next; // the next mbuf in the chain
-  char         *head; // the current start position of the buffer
-  unsigned int len;   // the length of the buffer
-  char         buf[MBUF_SIZE]; // the backing store
+  struct mbuf  *next; // the next mbuf in the chain 这条链上的下一个
+  char         *head; // the current start position of the buffer 缓冲区的当前起始位置
+  unsigned int len;   // the length of the buffer 缓冲区的长度
+  char         buf[MBUF_SIZE]; // the backing store 后备仓库
 };
 
 char *mbufpull(struct mbuf *m, unsigned int len);

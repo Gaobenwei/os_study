@@ -13,14 +13,14 @@
 #define E1000_RDBAL    (0x02800/4)  /* RX Descriptor Base Address Low - RW */
 #define E1000_RDTR     (0x02820/4)  /* RX Delay Timer */
 #define E1000_RADV     (0x0282C/4)  /* RX Interrupt Absolute Delay Timer */
-#define E1000_RDH      (0x02810/4)  /* RX Descriptor Head - RW */
-#define E1000_RDT      (0x02818/4)  /* RX Descriptor Tail - RW */
+#define E1000_RDH      (0x02810/4)  /* RX Descriptor Head - RW  RX描述符头- RW*/
+#define E1000_RDT      (0x02818/4)  /* RX Descriptor Tail - RW  RX描述符尾部- RW*/
 #define E1000_RDLEN    (0x02808/4)  /* RX Descriptor Length - RW */
 #define E1000_RSRPD    (0x02C00/4)  /* RX Small Packet Detect Interrupt */
 #define E1000_TDBAL    (0x03800/4)  /* TX Descriptor Base Address Low - RW */
-#define E1000_TDLEN    (0x03808/4)  /* TX Descriptor Length - RW */
-#define E1000_TDH      (0x03810/4)  /* TX Descriptor Head - RW */
-#define E1000_TDT      (0x03818/4)  /* TX Descripotr Tail - RW */
+#define E1000_TDLEN    (0x03808/4)  /* TX Descriptor Length - RW  TX描述符长度- RW*/
+#define E1000_TDH      (0x03810/4)  /* TX Descriptor Head - RW  TX描述符头- RW*/
+#define E1000_TDT      (0x03818/4)  /* TX Descripotr Tail - RW  TX描述器尾部*/
 #define E1000_MTA      (0x05200/4)  /* Multicast Table Array - RW Array */
 #define E1000_RA       (0x05400/4)  /* Receive Address - RW Array */
 
@@ -88,13 +88,14 @@
 #define E1000_RCTL_FLXBUF_SHIFT   27            /* Flexible buffer shift */
 
 #define DATA_MAX 1518
-
+// 传输描述符命令定义
 /* Transmit Descriptor command definitions [E1000 3.3.3.1] */
-#define E1000_TXD_CMD_EOP    0x01 /* End of Packet */
-#define E1000_TXD_CMD_RS     0x08 /* Report Status */
+#define E1000_TXD_CMD_EOP    0x01 /* End of Packet 报文结束 */
+#define E1000_TXD_CMD_RS     0x08 /* Report Status 报告状态*/
 
 /* Transmit Descriptor status definitions [E1000 3.3.3.2] */
-#define E1000_TXD_STAT_DD    0x00000001 /* Descriptor Done */
+/*发送描述符状态定义[E1000 3.3.3.2] */
+#define E1000_TXD_STAT_DD    0x00000001 /* Descriptor Done 描述符 已完成*/
 
 // [E1000 3.3.3]
 struct tx_desc
@@ -109,6 +110,7 @@ struct tx_desc
 };
 
 /* Receive Descriptor bit definitions [E1000 3.2.3.1] */
+/*接收描述符位定义[E1000 3.2.3.1] */
 #define E1000_RXD_STAT_DD       0x01    /* Descriptor Done */
 #define E1000_RXD_STAT_EOP      0x02    /* End of Packet */
 

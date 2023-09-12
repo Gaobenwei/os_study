@@ -62,6 +62,7 @@ mbuftrim(struct mbuf *m, unsigned int len)
 }
 
 // Allocates a packet buffer.
+//分配数据包缓冲区。
 struct mbuf *
 mbufalloc(unsigned int headroom)
 {
@@ -80,6 +81,7 @@ mbufalloc(unsigned int headroom)
 }
 
 // Frees a packet buffer.
+//释放数据包缓冲区。
 void
 mbuffree(struct mbuf *m)
 {
